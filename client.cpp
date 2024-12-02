@@ -1,61 +1,101 @@
 #include <iostream>
-#include <fstream>
-#include <chrono>
-#include <thread>
+
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#include <winsock2.h>
 #include <string>
+#include <windows.h>
+
+#pragma comment(lib, "Ws2_32.lib")
+#pragma warning(disable: 4996)  // подавление предупреждения 4996
+
 using namespace std;
 
-int main()
-{
-    ofstream request;
-    ifstream response;
-    int size_1 = 0, size_2 = 0;
-    string str = "", name = "";
-    int weight, tall;
+#define SRV_HOST "localhost"
+#define SRV_PORT 1234
+#define CLNT_PORT 1235
+#define BUF_SIZE 64
 
-    cout << "What's your name: ";
-    cin >> name;
+char TXT_ANSW[] = "I am your student\n";
 
-    while (true)
-    {
-        cout << "Vvedite ves: ";
-        cin >>weight;
-        cout << "Vvedite rost: ";
-        cin >> tall;
+int main() {
+    char buff[1024];
 
-
-        // Записываем имя и массив оценок в файл-запрос
-        request.open("C:/input.txt", ios::app);
-        request << name << endl;
-        request << weight << endl;
-        request << tall << endl;
-        request << endl;
-        request.close();
-
-        // Ожидание ответа от сервера с проверкой новых записей
-        this_thread::sleep_for(chrono::milliseconds(2000));
-        bool flag = false;
-
-        while (!flag)
-        {
-            response.open("C:/output.txt");
-            response.seekg(0, ios::end);
-            size_2 = response.tellg();
-
-            if (size_1 != size_2)
-            {
-                string mes;
-                response.seekg(size_1, ios::beg);
-                // Читаем все новые строки до конца файла
-                while (getline(response, str)) {
-                    mes = str;
-                };
-                cout << mes << endl;
-                size_1 = size_2;
-                flag = true;  // Новая запись найдена и выведена
-            }
-            response.close();
-            this_thread::sleep_for(chrono::milliseconds(500));
-        }
+    // Инициализация библиотеки Winsock
+    if (WSAStartup(MAKEWORD(2, 2), (WSADATA*)&buff[0])) {
+        cout << "Error WSAStartup \n" << WSAGetLastError();  // Ошибка!
+        return -1;
     }
+
+    SOCKET s;
+    int from_len;
+    char buf[BUF_SIZE] = { 0 };
+    hostent* hp;
+    sockaddr_in clnt_sin, srv_sin;
+
+    // Создание сокета
+    s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET) {
+        cout << "Socket creation failed: " << WSAGetLastError() << endl;
+        WSACleanup();
+        return -1;
+    }
+
+    // Настройка клиентского адреса
+    clnt_sin.sin_family = AF_INET;
+    clnt_sin.sin_addr.s_addr = INADDR_ANY; // Принять любые входящие адреса
+    clnt_sin.sin_port = htons(CLNT_PORT);
+
+    // Привязка сокета к клиентскому адресу
+    if (bind(s, (sockaddr*)&clnt_sin, sizeof(clnt_sin)) == SOCKET_ERROR) {
+        cout << "Bind failed: " << WSAGetLastError() << endl;
+        closesocket(s);
+        WSACleanup();
+        return -1;
+    }
+
+    // Получение адреса сервера
+    hp = gethostbyname(SRV_HOST);
+    if (hp == nullptr) {
+        cout << "gethostbyname failed: " << WSAGetLastError() << endl;
+        closesocket(s);
+        WSACleanup();
+        return -1;
+    }
+
+    srv_sin.sin_port = htons(SRV_PORT);
+    srv_sin.sin_family = AF_INET;
+    srv_sin.sin_addr.s_addr = *(reinterpret_cast<unsigned long*>(hp->h_addr_list[0]));
+
+    // Подключение к серверу
+    if (connect(s, (sockaddr*)&srv_sin, sizeof(srv_sin)) == SOCKET_ERROR) {
+        cout << "Connect failed: " << WSAGetLastError() << endl;
+        closesocket(s);
+        WSACleanup();
+        return -1;
+    }
+
+    string mst;
+    do {
+        
+        from_len = recv(s, buf, BUF_SIZE, 0);
+        if (from_len < 0) {
+            cout << "Receive failed: " << WSAGetLastError() << endl;
+            break; // выйти из цикла при ошибке
+        }
+        buf[from_len] = '\0';
+        cout << buf << endl;
+
+        getline(cin, mst);
+        if (!mst.empty()) {
+            send(s, mst.c_str(), mst.size(), 0);;
+            cout << "Sended" << endl;
+        }
+
+    } while (mst != "Bye");
+
+    cout << "exit to infinity" << endl;
+    cin.get();
+    closesocket(s);
+    WSACleanup();
+    return 0;
 }
